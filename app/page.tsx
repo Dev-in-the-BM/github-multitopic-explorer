@@ -13,7 +13,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
-import { Star, X, Plus, GitFork, Eye, CircleDot, Moon, Sun } from 'lucide-react'
+import { Star, X, Plus, GitFork, CircleDot, Moon, Sun, Github } from 'lucide-react'
 
 interface Repository {
   id: number
@@ -37,7 +37,7 @@ export default function GithubTopicsExplorer() {
   const [loading, setLoading] = useState(true)
   const [language, setLanguage] = useState('all')
   const [sort, setSort] = useState('stars')
-  const [selectedTopics, setSelectedTopics] = useState<string[]>(['note', 'free'])
+  const [selectedTopics, setSelectedTopics] = useState<string[]>(['note'])
   const [customTopic, setCustomTopic] = useState('')
   const [availableTopics, setAvailableTopics] = useState(predefinedTopics)
   const [darkMode, setDarkMode] = useState(false)
@@ -114,7 +114,9 @@ export default function GithubTopicsExplorer() {
           <div className="mb-8 space-y-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <span className="text-lg font-medium">#</span>
+                <span className="text-lg font-medium bg-black p-2 rounded-lg">
+                <Github className="text-white "/> 
+                </span>
                 <h1 className="text-3xl font-bold">GitHub Topics Explorer</h1>
               </div>
               <Button variant="outline" className="gap-2" onClick={toggleDarkMode}>
