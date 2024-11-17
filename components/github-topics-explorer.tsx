@@ -32,7 +32,7 @@ interface Repository {
 
 const predefinedTopics = ['note', 'free', 'opensource', 'markdown', 'wiki']
 
-export default function GithubTopicsExplorer() {
+export function GithubTopicsExplorer() {
   const [repositories, setRepositories] = useState<Repository[]>([])
   const [loading, setLoading] = useState(true)
   const [language, setLanguage] = useState('all')
