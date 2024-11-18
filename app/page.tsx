@@ -37,7 +37,7 @@ export default function GithubTopicsExplorer() {
   const [loading, setLoading] = useState(true)
   const [language, setLanguage] = useState('all')
   const [sort, setSort] = useState('stars')
-  const [selectedTopics, setSelectedTopics] = useState<string[]>(['note'])
+  const [selectedTopics, setSelectedTopics] = useState<string[]>([])
   const [customTopic, setCustomTopic] = useState('')
   const [availableTopics, setAvailableTopics] = useState(predefinedTopics)
   const [darkMode, setDarkMode] = useState(false)
@@ -112,7 +112,7 @@ export default function GithubTopicsExplorer() {
       <div className="bg-white dark:bg-[#0d1117] text-black dark:text-white min-h-screen transition-colors duration-200">
         <div className="container mx-auto p-6">
           <div className="mb-8 space-y-4">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between select-none">
               <div className="flex items-center gap-2">
                 <span className="text-lg font-medium bg-black p-2 rounded-lg">
                 <Github className="text-white "/> 
