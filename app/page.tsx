@@ -168,11 +168,18 @@ export default function GithubTopicsExplorer() {
   const handleAddCustomTopic = () => {
     if (customTopic && !availableTopics.includes(customTopic)) {
       const newAvailableTopics = [...availableTopics, customTopic]
+      
       setAvailableTopics(newAvailableTopics)
       setSelectedTopics(prev => [...prev, customTopic])
       setCustomTopic('')
       localStorage.setItem('savedTopics', JSON.stringify(newAvailableTopics))
     }
+    if (availableTopics.includes(customTopic)) {
+        setSelectedTopics(prev => 
+            prev.includes(customTopic) 
+              ? prev.filter(t => t !== customTopic)
+              : [...prev, customTopic]
+          )      }
   }
 
   const handleKeyPress = (e: KeyboardEvent<HTMLInputElement>) => {
@@ -263,6 +270,10 @@ export default function GithubTopicsExplorer() {
                   <SelectItem value="typescript">TypeScript</SelectItem>
                   <SelectItem value="python">Python</SelectItem>
                   <SelectItem value="java">Java</SelectItem>
+                  <SelectItem value="c">C</SelectItem>
+                  <SelectItem value="c++">C++</SelectItem>
+
+
                 </SelectContent>
               </Select>
 
@@ -285,6 +296,7 @@ export default function GithubTopicsExplorer() {
                   <label key={topic} className="flex items-center space-x-2">
                     <Checkbox
                       id={topic}
+                      
                       checked={selectedTopics.includes(topic)}
                       onCheckedChange={() => handleTopicChange(topic)}
                     />
