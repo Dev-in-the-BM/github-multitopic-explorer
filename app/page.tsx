@@ -74,7 +74,7 @@ export default function GithubTopicsExplorer() {
     if (savedSelectedTopics) {
       setSelectedTopics(JSON.parse(savedSelectedTopics))
     } else {
-      setSelectedTopics(['note', 'free'])
+      setSelectedTopics([])
     }
 
     const savedPreference = localStorage.getItem('colorPreference')
