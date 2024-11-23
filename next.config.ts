@@ -6,6 +6,16 @@ const nextConfig: NextConfig = {
     // your project has ESLint errors.
     ignoreDuringBuilds: true,
   },
+  // Allowed URLs
+  images: {
+    remotePatterns: [
+      {
+        protocol: 'https',
+        hostname: 's6.imgcdn.dev',
+        pathname: '**',
+      },
+    ],
+  },
 }
  
 export default nextConfig

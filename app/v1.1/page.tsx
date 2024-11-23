@@ -13,7 +13,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
-import { Star, X, Plus, GitFork, Eye, CircleDot, Moon, Sun } from 'lucide-react'
+import { Star, X, Plus, GitFork, CircleDot, Moon, Sun, Github } from 'lucide-react'
 
 interface Repository {
   id: number
@@ -36,7 +36,7 @@ interface LanguageColors {
 
 const predefinedTopics = ['note', 'free', 'opensource', 'markdown', 'wiki']
 
-export function GithubTopicsExplorer() {
+export default function GithubTopicsExplorer() {
   const [repositories, setRepositories] = useState<Repository[]>([])
   const [loading, setLoading] = useState(true)
   const [language, setLanguage] = useState('all')
@@ -46,7 +46,6 @@ export function GithubTopicsExplorer() {
   const [availableTopics, setAvailableTopics] = useState<string[]>([])
   const [darkMode, setDarkMode] = useState(false)
   const [languageColors, setLanguageColors] = useState<LanguageColors>({})
-  const [userPreference, setUserPreference] = useState<'system' | 'light' | 'dark'>('system')
 
   useEffect(() => {
     const fetchLanguageColors = async () => {
@@ -75,34 +74,7 @@ export function GithubTopicsExplorer() {
     } else {
       setSelectedTopics(['note', 'free'])
     }
-
-    const savedPreference = localStorage.getItem('colorPreference')
-    if (savedPreference) {
-      setUserPreference(savedPreference as 'system' | 'light' | 'dark')
-    }
-
-    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
-    const handleChange = () => {
-      if (userPreference === 'system') {
-        setDarkMode(mediaQuery.matches)
-        document.documentElement.classList.toggle('dark', mediaQuery.matches)
-      }
-    }
-
-    if (userPreference === 'dark') {
-      setDarkMode(true)
-      document.documentElement.classList.add('dark')
-    } else if (userPreference === 'light') {
-      setDarkMode(false)
-      document.documentElement.classList.remove('dark')
-    } else {
-      handleChange()
-    }
-
-    mediaQuery.addEventListener('change', handleChange)
-
-    return () => mediaQuery.removeEventListener('change', handleChange)
-  }, [userPreference])
+  }, [])
 
   useEffect(() => {
     const fetchRepositories = async () => {
@@ -113,7 +85,7 @@ export function GithubTopicsExplorer() {
         } else {
           const topicsQuery = selectedTopics.map(topic => `topic:${topic}`).join('+')
           const response = await fetch(
-            `https://api.github.com/search/repositories?q=${topicsQuery}&sort=stars&order=desc&per_page=100`
+            `https://api.github.com/search/repositories?q=${topicsQuery}&sort=stars&order=desc`
           )
           const data = await response.json()
           setRepositories(data.items)
@@ -128,31 +100,15 @@ export function GithubTopicsExplorer() {
     localStorage.setItem('selectedTopics', JSON.stringify(selectedTopics))
   }, [selectedTopics])
 
-  const sortRepositories = (repos: Repository[]) => {
-    switch (sort) {
-      case 'stars':
-        return repos.sort((a, b) => b.stargazers_count - a.stargazers_count)
-      case 'forks':
-        return repos.sort((a, b) => b.forks_count - a.forks_count)
-      case 'updated':
-        return repos.sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
-      default:
-        return repos
-    }
-  }
-
-  const filteredAndSortedRepositories = sortRepositories(
-    repositories.filter((repo) => {
-      if (language === 'all') return true
-      return repo.language?.toLowerCase() === language.toLowerCase()
-    })
-  )
+  const filteredRepositories = repositories.filter((repo) => {
+    if (language === 'all') return true
+    return repo.language?.toLowerCase() === language.toLowerCase()
+  })
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('en-US', {
       month: 'short',
       day: 'numeric',
-      year: 'numeric',
     })
   }
 
@@ -193,19 +149,8 @@ export function GithubTopicsExplorer() {
   }
 
   const toggleDarkMode = () => {
-    const newMode = darkMode ? 'light' : 'dark'
     setDarkMode(!darkMode)
-    setUserPreference(newMode)
-    localStorage.setItem('colorPreference', newMode)
-    document.documentElement.classList.toggle('dark', newMode === 'dark')
-  }
-
-  const resetToSystemPreference = () => {
-    setUserPreference('system')
-    localStorage.setItem('colorPreference', 'system')
-    const systemPrefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
-    setDarkMode(systemPrefersDark)
-    document.documentElement.classList.toggle('dark', systemPrefersDark)
+    document.documentElement.classList.toggle('dark')
   }
 
   return (
@@ -215,22 +160,17 @@ export function GithubTopicsExplorer() {
           <div className="mb-8 space-y-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <span className="text-lg font-medium">#</span>
+                <span className="text-lg font-medium bg-black p-2 rounded-lg">
+                    <Github className="text-white "/> 
+                </span>
                 <h1 className="text-3xl font-bold">GitHub Topics Explorer</h1>
               </div>
-              <div className="flex items-center gap-2">
-                <Button variant="outline" className="gap-2" onClick={toggleDarkMode}>
-                  {darkMode ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-                  {darkMode ? 'Light' : 'Dark'} Mode
-                </Button>
-                {userPreference !== 'system' && (
-                  <Button variant="ghost" size="sm" onClick={resetToSystemPreference}>
-                    Reset to System
-                  </Button>
-                )}
-              </div>
+              <Button variant="outline" className="gap-2" onClick={toggleDarkMode}>
+                {darkMode ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+                {darkMode ? 'Light' : 'Dark'} Mode
+              </Button>
             </div>
-            <a 
+            {/* <a 
               href="https://www.producthunt.com/posts/github-multi-topic-explorer?embed=true&utm_source=badge-featured&utm_medium=badge&utm_souce=badge-github-multi-topic-explorer" 
               target="_blank" 
               rel="noopener noreferrer"
@@ -242,9 +182,9 @@ export function GithubTopicsExplorer() {
                 width="250" 
                 height="54" 
               />
-            </a>
+            </a> */}
             <p className="text-muted-foreground">
-              Explore {filteredAndSortedRepositories.length} public repositories matching selected topics
+              Explore {repositories.length} public repositories matching selected topics
             </p>
           </div>
 
@@ -343,7 +283,7 @@ export function GithubTopicsExplorer() {
                   </CardContent>
                 </Card>
               ) : (
-                filteredAndSortedRepositories.map((repo) => (
+                filteredRepositories.map((repo) => (
                   <Card key={repo.id} className="bg-white dark:bg-[#161b22] border-[#d0d7de] dark:border-[#30363d]">
                     <CardHeader>
                       <div className="flex items-start justify-between">
