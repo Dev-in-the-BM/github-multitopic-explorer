@@ -269,11 +269,13 @@ export default function GithubTopicsExplorer() {
                   <SelectItem value="javascript">JavaScript</SelectItem>
                   <SelectItem value="typescript">TypeScript</SelectItem>
                   <SelectItem value="python">Python</SelectItem>
+                  <SelectItem value="rust">Rust</SelectItem>
+                  <SelectItem value="go">Go</SelectItem>
+                  <SelectItem value="vue">Vue</SelectItem>
                   <SelectItem value="java">Java</SelectItem>
                   <SelectItem value="c">C</SelectItem>
                   <SelectItem value="c++">C++</SelectItem>
-
-
+                  <SelectItem value="c#">C#</SelectItem>
                 </SelectContent>
               </Select>
 
