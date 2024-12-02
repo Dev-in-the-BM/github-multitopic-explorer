@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, KeyboardEvent, useMemo, useCallback } from 'react'
+import { useEffect, useState, KeyboardEvent } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
@@ -13,7 +13,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
-import { Star, X, Plus, GitFork,  CircleDot, Moon, Sun, ArrowUpDown,Github} from 'lucide-react'
+import { Star, X, Plus, GitFork, CircleDot, Moon, Sun, Github } from 'lucide-react'
 import Image from 'next/image'
 
 interface Repository {
@@ -42,15 +42,12 @@ export default function GithubTopicsExplorer() {
   const [loading, setLoading] = useState(true)
   const [language, setLanguage] = useState('all')
   const [sort, setSort] = useState('stars')
-  const [order, setOrder] = useState<'asc' | 'desc'>('desc')
   const [selectedTopics, setSelectedTopics] = useState<string[]>([])
   const [customTopic, setCustomTopic] = useState('')
   const [availableTopics, setAvailableTopics] = useState<string[]>([])
   const [darkMode, setDarkMode] = useState(false)
   const [languageColors, setLanguageColors] = useState<LanguageColors>({})
   const [userPreference, setUserPreference] = useState<'system' | 'light' | 'dark'>('system')
-  const [languageCounts, setLanguageCounts] = useState<Record<string, number>>({})
-  const [searchQuery, setSearchQuery] = useState('')
 
   useEffect(() => {
     const fetchLanguageColors = async () => {
@@ -77,7 +74,7 @@ export default function GithubTopicsExplorer() {
     if (savedSelectedTopics) {
       setSelectedTopics(JSON.parse(savedSelectedTopics))
     } else {
-      setSelectedTopics(['note', 'free'])
+      setSelectedTopics([])
     }
 
     const savedPreference = localStorage.getItem('colorPreference')
@@ -108,73 +105,49 @@ export default function GithubTopicsExplorer() {
     return () => mediaQuery.removeEventListener('change', handleChange)
   }, [userPreference])
 
-  const fetchRepositories = useCallback(async () => {
-    setLoading(true)
-    try {
-      if (selectedTopics.length === 0) {
-        setRepositories([])
-      } else {
-
-      const topicsQuery = selectedTopics.map(topic => `topic:${topic}`).join('+')
-      const response = await fetch(
-        `https://api.github.com/search/repositories?q=${topicsQuery}&sort=stars&order=desc&per_page=100`
-      )
-      const data = await response.json()
-      setRepositories(data.items)
-      updateLanguageCounts(data.items)
+  useEffect(() => {
+    const fetchRepositories = async () => {
+      setLoading(true)
+      try {
+        if (selectedTopics.length === 0) {
+          setRepositories([])
+        } else {
+          const topicsQuery = selectedTopics.map(topic => `topic:${topic}`).join('+')
+          const response = await fetch(
+            `https://api.github.com/search/repositories?q=${topicsQuery}&sort=stars&order=desc&per_page=100`
+          )
+          const data = await response.json()
+          setRepositories(data.items)
+        }
+      } catch (error) {
+        console.error('Error fetching repositories:', error)
       }
-    } catch (error) {
-      console.error('Error fetching repositories:', error)
+      setLoading(false)
     }
-    
-    setLoading(false)
+
+    fetchRepositories()
+    localStorage.setItem('selectedTopics', JSON.stringify(selectedTopics))
   }, [selectedTopics])
 
-  useEffect(() => {
-    if (selectedTopics.length > 0) {
-      fetchRepositories()
-    }
-  }, [selectedTopics, fetchRepositories])
-
-  const updateLanguageCounts = (repos: Repository[]) => {
-    const counts: Record<string, number> = {}
-    repos.forEach(repo => {
-      if (repo.language) {
-        counts[repo.language] = (counts[repo.language] || 0) + 1
-      }
-    })
-    setLanguageCounts(counts)
-  }
-
   const sortRepositories = (repos: Repository[]) => {
-    return repos.sort((a, b) => {
-      let comparison = 0
-      switch (sort) {
-        case 'stars':
-          comparison = b.stargazers_count - a.stargazers_count
-          break
-        case 'forks':
-          comparison = b.forks_count - a.forks_count
-          break
-        case 'updated':
-          comparison = new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
-          break
-        default:
-          return 0
-      }
-      return order === 'asc' ? -comparison : comparison
-    })
+    switch (sort) {
+      case 'stars':
+        return repos.sort((a, b) => b.stargazers_count - a.stargazers_count)
+      case 'forks':
+        return repos.sort((a, b) => b.forks_count - a.forks_count)
+      case 'updated':
+        return repos.sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
+      default:
+        return repos
+    }
   }
 
-  const filteredAndSortedRepositories = useMemo(() => {
-    return sortRepositories(
-      repositories.filter((repo) => {
-        const languageMatch = language === 'all' || repo.language?.toLowerCase() === language.toLowerCase()
-        const searchMatch = searchQuery === '' || repo.name.toLowerCase().includes(searchQuery.toLowerCase())
-        return languageMatch && searchMatch
-      })
-    )
-  }, [repositories, language, searchQuery, sort, order])
+  const filteredAndSortedRepositories = sortRepositories(
+    repositories.filter((repo) => {
+      if (language === 'all') return true
+      return repo.language?.toLowerCase() === language.toLowerCase()
+    })
+  )
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('en-US', {
@@ -195,18 +168,18 @@ export default function GithubTopicsExplorer() {
   const handleAddCustomTopic = () => {
     if (customTopic && !availableTopics.includes(customTopic)) {
       const newAvailableTopics = [...availableTopics, customTopic]
+      
       setAvailableTopics(newAvailableTopics)
       setSelectedTopics(prev => [...prev, customTopic])
       setCustomTopic('')
       localStorage.setItem('savedTopics', JSON.stringify(newAvailableTopics))
     }
     if (availableTopics.includes(customTopic)) {
-      setSelectedTopics(prev => 
-          prev.includes(customTopic) 
-            ? prev.filter(t => t !== customTopic)
-            : [...prev, customTopic]
-        )      }
-
+        setSelectedTopics(prev => 
+            prev.includes(customTopic) 
+              ? prev.filter(t => t !== customTopic)
+              : [...prev, customTopic]
+          )      }
   }
 
   const handleKeyPress = (e: KeyboardEvent<HTMLInputElement>) => {
@@ -243,10 +216,6 @@ export default function GithubTopicsExplorer() {
     document.documentElement.classList.toggle('dark', systemPrefersDark)
   }
 
-  const toggleSortOrder = () => {
-    setOrder(prev => prev === 'asc' ? 'desc' : 'asc')
-  }
-
   return (
     <div className={`min-h-screen ${darkMode ? 'dark' : ''}`}>
       <div className="bg-white dark:bg-[#0d1117] text-black dark:text-white min-h-screen transition-colors duration-200">
@@ -254,7 +223,7 @@ export default function GithubTopicsExplorer() {
           <div className="mb-8 space-y-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-              <span className="text-lg font-medium bg-black p-2 rounded-lg">
+                <span className="text-lg font-medium bg-black p-2 rounded-lg">
                     <Github className="text-white "/> 
                 </span>
                 <h1 className="text-3xl font-bold">GitHub Topics Explorer</h1>
@@ -275,8 +244,8 @@ export default function GithubTopicsExplorer() {
               href="https://www.producthunt.com/posts/github-multi-topic-explorer?embed=true&utm_source=badge-featured&utm_medium=badge&utm_souce=badge-github-multi-topic-explorer" 
               target="_blank" 
               rel="noopener noreferrer"
-              className="inline-block"
-            >
+              className="flex inline-flex select-none"
+            > 
               <Image 
                 src="https://s6.imgcdn.dev/E06Uy.png" 
                 alt="GitHub Multi-Topic Explorer - A Tool for Multiple Topics Searches | Product Hunt" 
@@ -297,11 +266,16 @@ export default function GithubTopicsExplorer() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Languages</SelectItem>
-                  {Object.entries(languageCounts).sort((a, b) => b[1] - a[1]).map(([lang, count]) => (
-                    <SelectItem key={lang} value={lang.toLowerCase()}>
-                      {lang} ({count})
-                    </SelectItem>
-                  ))}
+                  <SelectItem value="javascript">JavaScript</SelectItem>
+                  <SelectItem value="typescript">TypeScript</SelectItem>
+                  <SelectItem value="python">Python</SelectItem>
+                  <SelectItem value="rust">Rust</SelectItem>
+                  <SelectItem value="go">Go</SelectItem>
+                  <SelectItem value="vue">Vue</SelectItem>
+                  <SelectItem value="java">Java</SelectItem>
+                  <SelectItem value="c">C</SelectItem>
+                  <SelectItem value="c++">C++</SelectItem>
+                  <SelectItem value="c#">C#</SelectItem>
                 </SelectContent>
               </Select>
 
@@ -315,21 +289,6 @@ export default function GithubTopicsExplorer() {
                   <SelectItem value="updated">Recently updated</SelectItem>
                 </SelectContent>
               </Select>
-
-              <Button variant="outline" onClick={toggleSortOrder} className="gap-2">
-                <ArrowUpDown className="h-4 w-4" />
-                {order === 'asc' ? 'Ascending' : 'Descending'}
-              </Button>
-
-              <div className="flex-1 flex gap-2">
-                <Input
-                  type="text"
-                  placeholder="Search in results..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="flex-1"
-                />
-              </div>
             </div>
 
             <div className="space-y-2">
@@ -339,6 +298,7 @@ export default function GithubTopicsExplorer() {
                   <label key={topic} className="flex items-center space-x-2">
                     <Checkbox
                       id={topic}
+                      
                       checked={selectedTopics.includes(topic)}
                       onCheckedChange={() => handleTopicChange(topic)}
                     />
@@ -397,12 +357,6 @@ export default function GithubTopicsExplorer() {
                 <Card className="bg-white dark:bg-[#161b22] border-[#d0d7de] dark:border-[#30363d]">
                   <CardContent className="text-center py-6">
                     <p className="text-muted-foreground">No topics selected. Please select at least one topic to see repositories.</p>
-                  </CardContent>
-                </Card>
-              ) : filteredAndSortedRepositories.length === 0 ? (
-                <Card className="bg-white dark:bg-[#161b22] border-[#d0d7de] dark:border-[#30363d]">
-                  <CardContent className="text-center py-6">
-                    <p className="text-muted-foreground">No repositories found matching the selected criteria.</p>
                   </CardContent>
                 </Card>
               ) : (
