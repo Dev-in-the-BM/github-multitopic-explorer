@@ -10,6 +10,7 @@ import '@/components/m3e-icons'
 import { M3eAppBar } from '@m3e/react/app-bar'
 import { M3eButton } from '@m3e/react/button'
 import type { M3eButtonElement } from '@m3e/web/button'
+import { setCustomState } from '@m3e/web/core'
 import { M3eButtonGroup } from '@m3e/react/button-group'
 import { M3eCard } from '@m3e/react/card'
 import {
@@ -83,6 +84,22 @@ export default function GithubTopicsExplorer() {
   const [searchQuery, setSearchQuery] = React.useState('')
   const [showMoreFilters, setShowMoreFilters] = React.useState(false)
   const moreFiltersRef = React.useRef<M3eButtonElement | null>(null)
+  const topicCapRef = React.useRef<M3eButtonElement | null>(null)
+
+  /*
+   * The add cap borrows the connected segment's corner contract: its
+   * per-corner radius rules only apply under the `--connected` custom
+   * state, which `m3e-button-group` normally grants its children. Granting
+   * it here via the library's own `setCustomState` helper is what switches
+   * those rules on — audited: no JS in the button reads `--connected`,
+   * and every width/flex behavior needs `--grouped` too, which is never
+   * set, so shaping is all this changes. Runs once; Chromium backs custom
+   * states with ElementInternals (no attributes), so hydration is
+   * unaffected.
+   */
+  React.useEffect(() => {
+    if (topicCapRef.current) setCustomState(topicCapRef.current, '--connected', true)
+  }, [])
 
   /*
    * `aria-expanded` is written imperatively, not as a prop. The `M3eButton`
@@ -363,6 +380,7 @@ export default function GithubTopicsExplorer() {
               <M3eButton
                 variant="filled"
                 className="topic-add-cap"
+                ref={topicCapRef}
                 aria-label="Add custom topic"
                 title="Add custom topic"
                 onClick={handleAddCustomTopic}
