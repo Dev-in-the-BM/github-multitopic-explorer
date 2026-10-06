@@ -2,71 +2,286 @@
 @tailwind components;
 @tailwind utilities;
 
-body {
-  font-family: Arial, Helvetica, sans-serif;
-}
-
-@layer base {
-  :root {
-    --background: 0 0% 100%;
-    --foreground: 240 10% 3.9%;
-    --card: 0 0% 100%;
-    --card-foreground: 240 10% 3.9%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 240 10% 3.9%;
-    --primary: 240 5.9% 10%;
-    --primary-foreground: 0 0% 98%;
-    --secondary: 240 4.8% 95.9%;
-    --secondary-foreground: 240 5.9% 10%;
-    --muted: 240 4.8% 95.9%;
-    --muted-foreground: 240 3.8% 46.1%;
-    --accent: 240 4.8% 95.9%;
-    --accent-foreground: 240 5.9% 10%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 240 5.9% 90%;
-    --input: 240 5.9% 90%;
-    --ring: 240 10% 3.9%;
-    --chart-1: 12 76% 61%;
-    --chart-2: 173 58% 39%;
-    --chart-3: 197 37% 24%;
-    --chart-4: 43 74% 66%;
-    --chart-5: 27 87% 67%;
-    --radius: 0.5rem;
-  }
-  .dark {
-    --background: 240 10% 3.9%;
-    --foreground: 0 0% 98%;
-    --card: 240 10% 3.9%;
-    --card-foreground: 0 0% 98%;
-    --popover: 240 10% 3.9%;
-    --popover-foreground: 0 0% 98%;
-    --primary: 0 0% 98%;
-    --primary-foreground: 240 5.9% 10%;
-    --secondary: 240 3.7% 15.9%;
-    --secondary-foreground: 0 0% 98%;
-    --muted: 240 3.7% 15.9%;
-    --muted-foreground: 240 5% 64.9%;
-    --accent: 240 3.7% 15.9%;
-    --accent-foreground: 0 0% 98%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 240 3.7% 15.9%;
-    --input: 240 3.7% 15.9%;
-    --ring: 240 4.9% 83.9%;
-    --chart-1: 220 70% 50%;
-    --chart-2: 160 60% 45%;
-    --chart-3: 30 80% 55%;
-    --chart-4: 280 65% 60%;
-    --chart-5: 340 75% 55%;
-  }
-}
+/*
+ * There are no Material tokens declared in this file on purpose.
+ *
+ * <m3e-theme> (see components/m3e-theme-provider.tsx) derives a complete
+ * Material 3 scheme from a single seed color with
+ * @material/material-color-utilities and publishes it as
+ * `--md-sys-color-*` on `html`, together with the `--md-sys-motion-*`
+ * spring tokens. Every Web Component in @m3e/web consumes those same
+ * variables, so light-DOM Tailwind utilities and the components inside
+ * shadow DOM share one source of truth and stay in sync across both
+ * color schemes.
+ *
+ * The `--md-sys-color-*` values must NOT be re-declared here: a `:root`
+ * rule outranks the `html { ... }` rule that m3e-theme injects, and
+ * would silently win over the generated scheme.
+ *
+ * The hex fallbacks on individual properties exist only to paint the
+ * first server-rendered frame, before the custom element upgrades. They
+ * use GitHub Primer product-UI neutrals so the pre-hydration flash
+ * matches the final page.
+ */
 
 @layer base {
   * {
     @apply border-border;
   }
+
+  button {
+    touch-action: manipulation;
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
   body {
-    @apply bg-background text-foreground;
+    background-color: var(--md-sys-color-surface, #ffffff);
+    color: var(--md-sys-color-on-surface, #1f2328);
+    min-height: 100dvh;
+  }
+
+  /*
+   * @m3e/web handles reduced motion per component, but plain light-DOM
+   * elements (the skip link, the palette switcher) still need it.
+   */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+
+  /*
+   * Focus rings for the light-DOM links that sit outside any M3E
+   * component. Web components draw their own focus indicator; these
+   * cover plain anchors.
+   */
+  a:focus-visible {
+    outline: 2px solid var(--md-sys-color-primary, #0969da);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  /*
+   * Slotted control reset. `m3e-search-bar` and `m3e-form-field` render
+   * their containers, labels, icons and focus indicators in shadow DOM,
+   * but the `<input>` itself lives in light DOM — so it keeps the user
+   * agent's inset background, 1px border and blue focus outline, which
+   * is the "extra lined box" inside the field when it is selected.
+   * The components draw their own container focus state
+   * (`:focus-within` → outline color), so removing the native ring here
+   * does not remove the visible focus indicator, it moves it to the
+   * container where M3 puts it.
+   */
+  m3e-search-bar input[slot='input'],
+  m3e-form-field input,
+  m3e-form-field select {
+    background: transparent;
+    border: none;
+    outline: none;
+    box-shadow: none;
+    inline-size: 100%;
+    font: inherit;
+    color: inherit;
+    padding: 0;
+  }
+
+  m3e-search-bar input[slot='input']::placeholder,
+  m3e-form-field input::placeholder {
+    color: var(--md-sys-color-on-surface-variant, #59636e);
+    opacity: 1;
+  }
+}
+
+@layer components {
+  /* Repository name: M3 renders links in `primary`, underlined. */
+  .repo-link {
+    color: var(--md-sys-color-primary, #0969da);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+
+  .repo-link:hover {
+    text-decoration-thickness: 2px;
+  }
+
+  /*
+   * Skip link. Mirrors the M3 state layer rather than a raw brand color
+   * so it stays legible in both schemes.
+   */
+  .skip-link {
+    @apply sr-only;
+  }
+
+  .skip-link:focus-visible {
+    @apply not-sr-only fixed left-2 top-2 z-50 flex items-center px-4 py-3;
+    background-color: var(--md-sys-color-primary-container, #ddf4ff);
+    color: var(--md-sys-color-on-primary-container, #0c2d6b);
+    border-radius: 9999px;
+    font-weight: 700;
+    outline: none;
+  }
+
+  /*
+   * Toolbar fields (language select, date fields). They render
+   * `variant="filled"` but with the resting indicator removed, so at rest
+   * they read as plain filled containers — the same language as the search
+   * bar beside them — instead of boxed inputs.
+   *
+   * This only touches `--m3e-form-field-outline-color`, the resting state.
+   * The focused state still uses `--m3e-form-field-focused-outline-color`
+   * (primary, 3px), so selecting a field draws the indicator back in and
+   * focus stays unmistakable. Hover still reads through the container
+   * overlay. Error/disabled states are untouched.
+   */
+  .toolbar-field {
+    --m3e-form-field-outline-color: transparent;
+  }
+
+  /*
+   * The topic composite: one oval, two elements. The field runs the left
+   * stretch and ends suddenly (flat right edge); the filled cap finishes
+   * the tip and carries the plus. Joinery mirrors a connected button
+   * group — flush inner edges, rounded outer caps, no gap.
+   *
+   * The `--_button-*` vars are the same private hooks the connected group
+   * itself uses to flatten inner segment corners (it sets them from the
+   * public `--m3e-connected-button-group-*-inner-shape` tokens). There is
+   * no public per-corner button API, so this reaches one level down,
+   * pinned to @m3e 2.9.1. If a future version renames them, the cap falls
+   * back to a full pill overlapping the cut — visibly wrong, loudly, not
+   * silently. (RTL note: these are start-side vars, so in RTL the flat
+   * side would flip; the page is LTR-only.)
+   *
+   * Highlighting is shading-only throughout — no indicator lines, no
+   * rings, per the standing correction. Rest fill sits one surface step
+   * below focus/hover; the label still goes primary on focus natively.
+   * The hover overlay token is neutralized because its rectangle ignores
+   * the oval (it would flash square corners); the container-color step
+   * replaces it for both hover and focus.
+   */
+  .topic-composite {
+    display: flex;
+    align-items: flex-start;
+    inline-size: 100%;
+    max-inline-size: 42rem;
+  }
+
+  .topic-composite .topic-field {
+    flex: 1 1 auto;
+    min-inline-size: 0;
+    --m3e-form-field-outline-color: transparent;
+    --m3e-form-field-focused-outline-color: transparent;
+    --m3e-form-field-hover-container-color: transparent;
+    --m3e-form-field-container-shape: 999px 0 0 999px;
+    --m3e-form-field-container-color: var(--md-sys-color-surface-container-high, #eff2f5);
+  }
+
+  .topic-composite .topic-field:hover,
+  .topic-composite .topic-field:focus-within {
+    --m3e-form-field-container-color: var(--md-sys-color-surface-container-highest, #e6eaef);
+  }
+
+  .topic-add-cap {
+    flex: none;
+    --m3e-button-container-height: 56px;
+    --_button-rounded-start-shape: 0;
+    --_button-start-shape-pressed-morph: 0;
+  }
+
+  /*
+   * The "GitHub" palette: exact Primer product-UI colors, applied as M3
+   * roles. Everything on this page — Tailwind utilities and @m3e/web
+   * shadow-DOM components alike — consumes `--md-sys-color-*`, so pinning
+   * the roles re-skins the whole system without touching a component.
+   *
+   * Every value below is a resolved Primer functional token (see
+   * primer/primitives), and every container/on-container pairing mirrors an
+   * actual Primer usage: white checks on `control-checked` blue,
+   * accent/danger/done labels on their muted backgrounds, danger-button
+   * white on emphasis red. No invented pairings.
+   *
+   * What is NOT pinned stays on the generated `fidelity` base: surface-dim
+   * and -bright, surface-tint, inverse roles, scrim, shadow, and the fixed
+   * roles. Those barely surface in this UI, and leaving them generated
+   * keeps their contrast math intact.
+   *
+   * Scoping, read carefully: these selectors MUST stay on `html` with the
+   * data attribute — never `:root`, never bare element rules. `m3e-theme`
+   * publishes the generated scheme onto `html`, and a `:root` rule would
+   * outrank it unconditionally. The attribute selectors outrank it only
+   * when their scheme is active, and because they sit on `html`, the
+   * `<body>` background the theme derives from these same roles follows
+   * automatically.
+   */
+  html[data-scheme='light'] {
+    --md-sys-color-primary: #0969da;
+    --md-sys-color-on-primary: #ffffff;
+    --md-sys-color-primary-container: #ddf4ff;
+    --md-sys-color-on-primary-container: #0969da;
+    --md-sys-color-secondary: #59636e;
+    --md-sys-color-on-secondary: #ffffff;
+    --md-sys-color-secondary-container: #e6eaef;
+    --md-sys-color-on-secondary-container: #1f2328;
+    --md-sys-color-tertiary: #8250df;
+    --md-sys-color-on-tertiary: #ffffff;
+    --md-sys-color-tertiary-container: #fbefff;
+    --md-sys-color-on-tertiary-container: #8250df;
+    --md-sys-color-error: #d1242f;
+    --md-sys-color-on-error: #ffffff;
+    --md-sys-color-error-container: #ffebe9;
+    --md-sys-color-on-error-container: #d1242f;
+    --md-sys-color-surface: #ffffff;
+    --md-sys-color-on-surface: #1f2328;
+    --md-sys-color-surface-variant: #f6f8fa;
+    --md-sys-color-on-surface-variant: #59636e;
+    --md-sys-color-surface-container-lowest: #ffffff;
+    --md-sys-color-surface-container-low: #f6f8fa;
+    --md-sys-color-surface-container: #f6f8fa;
+    --md-sys-color-surface-container-high: #eff2f5;
+    --md-sys-color-surface-container-highest: #e6eaef;
+    --md-sys-color-background: #ffffff;
+    --md-sys-color-on-background: #1f2328;
+    --md-sys-color-outline: #818b98;
+    --md-sys-color-outline-variant: #d1d9e0;
+  }
+
+  html[data-scheme='dark'] {
+    --md-sys-color-primary: #4493f8;
+    --md-sys-color-on-primary: #ffffff;
+    --md-sys-color-primary-container: #1f6feb;
+    --md-sys-color-on-primary-container: #ffffff;
+    --md-sys-color-secondary: #9198a1;
+    --md-sys-color-on-secondary: #0d1117;
+    --md-sys-color-secondary-container: #2a313c;
+    --md-sys-color-on-secondary-container: #f0f6fc;
+    --md-sys-color-tertiary: #ab7df8;
+    --md-sys-color-on-tertiary: #0d1117;
+    --md-sys-color-tertiary-container: #2a313c;
+    --md-sys-color-on-tertiary-container: #ab7df8;
+    --md-sys-color-error: #f85149;
+    --md-sys-color-on-error: #0d1117;
+    --md-sys-color-error-container: #da3633;
+    --md-sys-color-on-error-container: #ffffff;
+    --md-sys-color-surface: #0d1117;
+    --md-sys-color-on-surface: #f0f6fc;
+    --md-sys-color-surface-variant: #151b23;
+    --md-sys-color-on-surface-variant: #9198a1;
+    --md-sys-color-surface-container-lowest: #010409;
+    --md-sys-color-surface-container-low: #151b23;
+    --md-sys-color-surface-container: #151b23;
+    --md-sys-color-surface-container-high: #262c36;
+    --md-sys-color-surface-container-highest: #2a313c;
+    --md-sys-color-background: #0d1117;
+    --md-sys-color-on-background: #f0f6fc;
+    --md-sys-color-outline: #656c76;
+    --md-sys-color-outline-variant: #3d444d;
   }
 }

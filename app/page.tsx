@@ -1,20 +1,34 @@
 'use client'
 
-import { useEffect, useState, KeyboardEvent, useMemo, useCallback } from 'react'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import * as React from 'react'
+
+// Registers the Material Symbols SVG paths used below. Must come before any
+// `<M3eIcon>` renders. See components/m3e-icons.ts for why we do this
+// instead of loading the Google Fonts stylesheet.
+import '@/components/m3e-icons'
+
+import { M3eAppBar } from '@m3e/react/app-bar'
+import { M3eButton } from '@m3e/react/button'
+import type { M3eButtonElement } from '@m3e/web/button'
+import { M3eButtonGroup } from '@m3e/react/button-group'
+import { M3eCard } from '@m3e/react/card'
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import { Skeleton } from '@/components/ui/skeleton'
-import { Checkbox } from '@/components/ui/checkbox'
-import { Input } from '@/components/ui/input'
-import { Star, X, Plus, GitFork,  CircleDot, Moon, Sun, ArrowUpDown,Github} from 'lucide-react'
-import Image from 'next/image'
+  M3eChipSet,
+  M3eFilterChip,
+  M3eFilterChipSet,
+  M3eSuggestionChip,
+} from '@m3e/react/chips'
+import { M3eFormField } from '@m3e/react/form-field'
+import { M3eHeading } from '@m3e/react/heading'
+import { Icon } from '@/components/m3e-icon'
+import { M3eIconButton } from '@m3e/react/icon-button'
+import { M3eLoadingIndicator } from '@m3e/react/loading-indicator'
+import { M3eOption } from '@m3e/react/option'
+import { M3eRadio, M3eRadioGroup } from '@m3e/react/radio-group'
+import { M3eSearchBar } from '@m3e/react/search'
+import { M3eSelect } from '@m3e/react/select'
+
+import { useMaterialTheme } from '@/components/m3e-theme-provider'
 
 interface Repository {
   id: number
@@ -29,6 +43,8 @@ interface Repository {
   html_url: string
   language: string
   updated_at: string
+  // Present in GitHub search responses; needed for the "Created" date filter.
+  created_at: string
 }
 
 interface LanguageColors {
@@ -37,433 +53,654 @@ interface LanguageColors {
 
 const predefinedTopics = ['note', 'free', 'opensource', 'markdown', 'wiki']
 
+const sortOptions = [
+  { value: 'stars', label: 'Stars' },
+  { value: 'forks', label: 'Forks' },
+  { value: 'updated', label: 'Updated' },
+] as const
+
+const countLanguages = (repos: Repository[]) => {
+  const counts: Record<string, number> = {}
+  for (const repo of repos) {
+    if (repo.language) {
+      counts[repo.language] = (counts[repo.language] || 0) + 1
+    }
+  }
+  return counts
+}
+
 export default function GithubTopicsExplorer() {
-  const [repositories, setRepositories] = useState<Repository[]>([])
-  const [loading, setLoading] = useState(true)
-  const [language, setLanguage] = useState('all')
-  const [sort, setSort] = useState('stars')
-  const [order, setOrder] = useState<'asc' | 'desc'>('desc')
-  const [selectedTopics, setSelectedTopics] = useState<string[]>([])
-  const [customTopic, setCustomTopic] = useState('')
-  const [availableTopics, setAvailableTopics] = useState<string[]>([])
-  const [darkMode, setDarkMode] = useState(false)
-  const [languageColors, setLanguageColors] = useState<LanguageColors>({})
-  const [userPreference, setUserPreference] = useState<'system' | 'light' | 'dark'>('system')
-  const [languageCounts, setLanguageCounts] = useState<Record<string, number>>({})
-  const [searchQuery, setSearchQuery] = useState('')
+  const [repositories, setRepositories] = React.useState<Repository[]>([])
+  const [loading, setLoading] = React.useState(true)
+  const [language, setLanguage] = React.useState('all')
+  const [sort, setSort] = React.useState<(typeof sortOptions)[number]['value']>('stars')
+  const [order, setOrder] = React.useState<'asc' | 'desc'>('desc')
+  const [selectedTopics, setSelectedTopics] = React.useState<string[]>([])
+  const [customTopic, setCustomTopic] = React.useState('')
+  const [availableTopics, setAvailableTopics] = React.useState<string[]>(predefinedTopics)
+  const [languageColors, setLanguageColors] = React.useState<LanguageColors>({})
+  const [languageCounts, setLanguageCounts] = React.useState<Record<string, number>>({})
+  const [searchQuery, setSearchQuery] = React.useState('')
+  const [showMoreFilters, setShowMoreFilters] = React.useState(false)
+  const moreFiltersRef = React.useRef<M3eButtonElement | null>(null)
 
-  useEffect(() => {
-    const fetchLanguageColors = async () => {
-      try {
-        const response = await fetch('https://hebbkx1anhila5yf.public.blob.vercel-storage.com/colors-aoOFmoXcb0KS7kGhlpF9BZxOEBoHLi.json')
-        const colors = await response.json()
-        setLanguageColors(colors)
-      } catch (error) {
-        console.error('Error fetching language colors:', error)
+  /*
+   * `aria-expanded` is written imperatively, not as a prop. The `M3eButton`
+   * binding drops a boolean `false`, and a string `'true'` arrives in the
+   * DOM as an empty attribute on updates (measured both ways) — while a
+   * directly-set attribute survives re-renders untouched. Effects run after
+   * React's DOM writes, so this always has the last word.
+   */
+  React.useEffect(() => {
+    moreFiltersRef.current?.setAttribute('aria-expanded', String(showMoreFilters))
+  }, [showMoreFilters])
+
+  const [dateField, setDateField] = React.useState<'updated' | 'created'>('updated')
+  const [dateFrom, setDateFrom] = React.useState('')
+  const [dateTo, setDateTo] = React.useState('')
+
+  const { preference, resolved, setPreference, toggle } = useMaterialTheme()
+
+  // Restore persisted state once on the client. The first render always uses
+  // the same defaults as the server, so there is nothing to hydrate.
+  React.useEffect(() => {
+    fetch(
+      'https://hebbkx1anhila5yf.public.blob.vercel-storage.com/colors-aoOFmoXcb0KS7kGhlpF9BZxOEBoHLi.json'
+    )
+      .then((response) => response.json())
+      .then(setLanguageColors)
+      .catch((error) => console.error('Error fetching language colors:', error))
+
+    try {
+      const savedTopics = localStorage.getItem('savedTopics')
+      if (savedTopics) {
+        const parsed = JSON.parse(savedTopics)
+        if (Array.isArray(parsed)) {
+          setAvailableTopics([...new Set([...predefinedTopics, ...parsed])])
+        }
       }
-    }
-
-    fetchLanguageColors()
-
-    const savedTopics = localStorage.getItem('savedTopics')
-    if (savedTopics) {
-      const parsedTopics = JSON.parse(savedTopics)
-      setAvailableTopics([...new Set([...predefinedTopics, ...parsedTopics])])
-    } else {
-      setAvailableTopics(predefinedTopics)
-    }
-
-    const savedSelectedTopics = localStorage.getItem('selectedTopics')
-    if (savedSelectedTopics) {
-      setSelectedTopics(JSON.parse(savedSelectedTopics))
-    } else {
-      setSelectedTopics(['note', 'free'])
-    }
-
-    const savedPreference = localStorage.getItem('colorPreference')
-    if (savedPreference) {
-      setUserPreference(savedPreference as 'system' | 'light' | 'dark')
-    }
-
-    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
-    const handleChange = () => {
-      if (userPreference === 'system') {
-        setDarkMode(mediaQuery.matches)
-        document.documentElement.classList.toggle('dark', mediaQuery.matches)
+      const savedSelected = localStorage.getItem('selectedTopics')
+      if (savedSelected) {
+        const parsed = JSON.parse(savedSelected)
+        if (Array.isArray(parsed)) {
+          setSelectedTopics(parsed)
+          return
+        }
       }
+    } catch {
+      // Corrupt localStorage should not take the page down.
+    }
+    setSelectedTopics(['note', 'free'])
+  }, [])
+
+  const fetchRepositories = React.useCallback(async (topics: string[]) => {
+    if (topics.length === 0) {
+      setRepositories([])
+      setLanguageCounts({})
+      setLoading(false)
+      return
     }
 
-    if (userPreference === 'dark') {
-      setDarkMode(true)
-      document.documentElement.classList.add('dark')
-    } else if (userPreference === 'light') {
-      setDarkMode(false)
-      document.documentElement.classList.remove('dark')
-    } else {
-      handleChange()
-    }
-
-    mediaQuery.addEventListener('change', handleChange)
-
-    return () => mediaQuery.removeEventListener('change', handleChange)
-  }, [userPreference])
-
-  const fetchRepositories = useCallback(async () => {
     setLoading(true)
     try {
-      if (selectedTopics.length === 0) {
-        setRepositories([])
-      } else {
-
-      const topicsQuery = selectedTopics.map(topic => `topic:${topic}`).join('+')
+      const topicsQuery = topics.map((topic) => `topic:${topic}`).join('+')
       const response = await fetch(
         `https://api.github.com/search/repositories?q=${topicsQuery}&sort=stars&order=desc&per_page=100`
       )
       const data = await response.json()
-      setRepositories(data.items)
-      updateLanguageCounts(data.items)
+      // A rate-limited or errored search returns `{ message }` with no `items`,
+      // so the array has to be checked before it is read.
+      const items: Repository[] = Array.isArray(data.items) ? data.items : []
+      if (!Array.isArray(data.items) && data.message) {
+        console.warn('GitHub API notice:', data.message)
       }
+      setRepositories(items)
+      setLanguageCounts(countLanguages(items))
     } catch (error) {
       console.error('Error fetching repositories:', error)
+    } finally {
+      setLoading(false)
     }
-    
-    setLoading(false)
-  }, [selectedTopics])
+  }, [])
 
-  useEffect(() => {
-    if (selectedTopics.length > 0) {
-      fetchRepositories()
-    }
+  React.useEffect(() => {
+    void fetchRepositories(selectedTopics)
   }, [selectedTopics, fetchRepositories])
 
-  const updateLanguageCounts = (repos: Repository[]) => {
-    const counts: Record<string, number> = {}
-    repos.forEach(repo => {
-      if (repo.language) {
-        counts[repo.language] = (counts[repo.language] || 0) + 1
-      }
+  const filteredAndSortedRepositories = React.useMemo(() => {
+    const term = searchQuery.trim().toLowerCase()
+    const filtered = repositories.filter((repo) => {
+      const languageMatch = language === 'all' || repo.language?.toLowerCase() === language
+      const searchMatch = term === '' || repo.name.toLowerCase().includes(term)
+      // Date comparison on the YYYY-MM-DD prefix. String comparison is
+      // deliberate: both sides are zero-padded ISO calendar dates, so it
+      // orders correctly with no timezone interpretation at all.
+      const stamp = dateField === 'created' ? repo.created_at : repo.updated_at
+      const repoDay = (stamp ?? '').slice(0, 10)
+      const dateMatch =
+        (dateFrom === '' || repoDay >= dateFrom) && (dateTo === '' || repoDay <= dateTo)
+      return languageMatch && searchMatch && dateMatch
     })
-    setLanguageCounts(counts)
-  }
 
-  const sortRepositories = (repos: Repository[]) => {
-    return repos.sort((a, b) => {
-      let comparison = 0
+    const compare = (a: Repository, b: Repository) => {
       switch (sort) {
-        case 'stars':
-          comparison = b.stargazers_count - a.stargazers_count
-          break
         case 'forks':
-          comparison = b.forks_count - a.forks_count
-          break
+          return b.forks_count - a.forks_count
         case 'updated':
-          comparison = new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
-          break
+          return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
         default:
-          return 0
+          return b.stargazers_count - a.stargazers_count
       }
-      return order === 'asc' ? -comparison : comparison
-    })
+    }
+
+    return filtered.sort((a, b) => (order === 'asc' ? -compare(a, b) : compare(a, b)))
+  }, [repositories, language, searchQuery, sort, order, dateField, dateFrom, dateTo])
+
+  // Hidden-filter activity shown on the "More filters" button, so collapsed
+  // filters can never silently narrow the results.
+  const activeExtraFilterCount =
+    (language === 'all' ? 0 : 1) + (dateFrom === '' && dateTo === '' ? 0 : 1)
+
+  const persistTopics = (next: string[]) => {
+    setAvailableTopics(next)
+    localStorage.setItem('savedTopics', JSON.stringify(next))
   }
 
-  const filteredAndSortedRepositories = useMemo(() => {
-    return sortRepositories(
-      repositories.filter((repo) => {
-        const languageMatch = language === 'all' || repo.language?.toLowerCase() === language.toLowerCase()
-        const searchMatch = searchQuery === '' || repo.name.toLowerCase().includes(searchQuery.toLowerCase())
-        return languageMatch && searchMatch
-      })
+  const toggleTopic = (topic: string) => {
+    setSelectedTopics((prev) =>
+      prev.includes(topic) ? prev.filter((t) => t !== topic) : [...prev, topic]
     )
-  }, [repositories, language, searchQuery, sort, order])
+  }
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
+  const rememberTopic = (topic: string) => {
+    if (!availableTopics.includes(topic)) {
+      persistTopics([...availableTopics, topic])
+    }
+  }
+
+  const handleAddCustomTopic = () => {
+    const topic = customTopic.trim().toLowerCase()
+    if (!topic) return
+    rememberTopic(topic)
+    toggleTopic(topic)
+    setCustomTopic('')
+  }
+
+  const handleAddTopicFromResult = (topic: string) => {
+    rememberTopic(topic)
+    setSelectedTopics((prev) => (prev.includes(topic) ? prev : [...prev, topic]))
+  }
+
+  const formatDate = (dateString: string) =>
+    new Date(dateString).toLocaleDateString(undefined, {
       month: 'short',
       day: 'numeric',
       year: 'numeric',
     })
-  }
 
-  const handleTopicChange = (topic: string) => {
-    setSelectedTopics(prev => 
-      prev.includes(topic) 
-        ? prev.filter(t => t !== topic)
-        : [...prev, topic]
-    )
-  }
+  const sortedLanguages = React.useMemo(
+    () => Object.entries(languageCounts).sort((a, b) => b[1] - a[1]),
+    [languageCounts]
+  )
 
-  const handleAddCustomTopic = () => {
-    if (customTopic && !availableTopics.includes(customTopic)) {
-      const newAvailableTopics = [...availableTopics, customTopic]
-      setAvailableTopics(newAvailableTopics)
-      setSelectedTopics(prev => [...prev, customTopic])
-      setCustomTopic('')
-      localStorage.setItem('savedTopics', JSON.stringify(newAvailableTopics))
-    }
-    if (availableTopics.includes(customTopic)) {
-      setSelectedTopics(prev => 
-          prev.includes(customTopic) 
-            ? prev.filter(t => t !== customTopic)
-            : [...prev, customTopic]
-        )      }
+  // Typing in the custom-topic field narrows the saved-topic chips below it.
+  const topicFilter = customTopic.trim().toLowerCase()
+  const visibleTopics = topicFilter
+    ? availableTopics.filter((topic) => topic.toLowerCase().includes(topicFilter))
+    : availableTopics
+  const hasExactMatch = availableTopics.some((topic) => topic.toLowerCase() === topicFilter)
 
-  }
+  const topicHint =
+    topicFilter === ''
+      ? undefined
+      : hasExactMatch
+        ? `Press Enter to toggle "${customTopic.trim()}"`
+        : `Press Enter to add "${customTopic.trim()}" as a new topic`
 
-  const handleKeyPress = (e: KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter') {
-      e.preventDefault()
-      handleAddCustomTopic()
-    }
-  }
-
-  const handleAddTopicFromResult = (topic: string) => {
-    if (!availableTopics.includes(topic)) {
-      const newAvailableTopics = [...availableTopics, topic]
-      setAvailableTopics(newAvailableTopics)
-      localStorage.setItem('savedTopics', JSON.stringify(newAvailableTopics))
-    }
-    if (!selectedTopics.includes(topic)) {
-      setSelectedTopics(prev => [...prev, topic])
-    }
-  }
-
-  const toggleDarkMode = () => {
-    const newMode = darkMode ? 'light' : 'dark'
-    setDarkMode(!darkMode)
-    setUserPreference(newMode)
-    localStorage.setItem('colorPreference', newMode)
-    document.documentElement.classList.toggle('dark', newMode === 'dark')
-  }
-
-  const resetToSystemPreference = () => {
-    setUserPreference('system')
-    localStorage.setItem('colorPreference', 'system')
-    const systemPrefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
-    setDarkMode(systemPrefersDark)
-    document.documentElement.classList.toggle('dark', systemPrefersDark)
-  }
-
-  const toggleSortOrder = () => {
-    setOrder(prev => prev === 'asc' ? 'desc' : 'asc')
-  }
+  const hasNoTopics = selectedTopics.length === 0
 
   return (
-    <div className={`min-h-screen ${darkMode ? 'dark' : ''}`}>
-      <div className="bg-white dark:bg-[#0d1117] text-black dark:text-white min-h-screen transition-colors duration-200">
-        <div className="container mx-auto p-6">
-          <div className="mb-8 space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-              <span className="text-lg font-medium bg-black p-2 rounded-lg">
-                    <Github className="text-white "/> 
-                </span>
-                <h1 className="text-3xl font-bold">GitHub Topics Explorer</h1>
-              </div>
-              <div className="flex items-center gap-2">
-                <Button variant="outline" className="gap-2" onClick={toggleDarkMode}>
-                  {darkMode ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-                  {darkMode ? 'Light' : 'Dark'} Mode
-                </Button>
-                {userPreference !== 'system' && (
-                  <Button variant="ghost" size="sm" onClick={resetToSystemPreference}>
-                    Reset to System
-                  </Button>
-                )}
-              </div>
-            </div>
-            <a 
-              href="https://www.producthunt.com/posts/github-multi-topic-explorer?embed=true&utm_source=badge-featured&utm_medium=badge&utm_souce=badge-github-multi-topic-explorer" 
-              target="_blank" 
-              rel="noopener noreferrer"
-              className="inline-block"
-            >
-              <Image 
-                src="https://s6.imgcdn.dev/E06Uy.png" 
-                alt="GitHub Multi-Topic Explorer - A Tool for Multiple Topics Searches | Product Hunt" 
-                width="156" 
-                height="58" 
-              />
-            </a>
-            <p className="text-muted-foreground">
-              Explore {filteredAndSortedRepositories.length} public repositories matching selected topics
-            </p>
-          </div>
+    <div className="flex min-h-dvh flex-col">
+      <M3eAppBar size="small">
+        <M3eIconButton
+          slot="leading"
+          variant="tonal"
+          href="https://github.com"
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label="GitHub"
+        >
+          <Icon name="hub" />
+        </M3eIconButton>
 
-          <div className="mb-6 space-y-4">
-            <div className="flex flex-wrap gap-4">
-              <Select value={language} onValueChange={setLanguage}>
-                <SelectTrigger className="w-[180px]">
-                  <SelectValue placeholder="Select Language" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Languages</SelectItem>
-                  {Object.entries(languageCounts).sort((a, b) => b[1] - a[1]).map(([lang, count]) => (
-                    <SelectItem key={lang} value={lang.toLowerCase()}>
-                      {lang} ({count})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+        <span slot="title">GitHub Topics Explorer</span>
+        <span slot="subtitle">
+          {filteredAndSortedRepositories.length.toLocaleString()} repositories
+        </span>
 
-              <Select value={sort} onValueChange={setSort}>
-                <SelectTrigger className="w-[180px]">
-                  <SelectValue placeholder="Sort by" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="stars">Most stars</SelectItem>
-                  <SelectItem value="forks">Most forks</SelectItem>
-                  <SelectItem value="updated">Recently updated</SelectItem>
-                </SelectContent>
-              </Select>
+        <M3eIconButton
+          slot="trailing"
+          toggle
+          selected={resolved === 'dark'}
+          onBeforeInput={(event) => event.preventDefault()}
+          onClick={toggle}
+          aria-label={resolved === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+        >
+          <Icon name={resolved === 'dark' ? 'light_mode' : 'dark_mode'} />
+        </M3eIconButton>
+        {preference !== 'system' && (
+          <M3eButton slot="trailing" variant="text" onClick={() => setPreference('system')}>
+            System
+          </M3eButton>
+        )}
+      </M3eAppBar>
 
-              <Button variant="outline" onClick={toggleSortOrder} className="gap-2">
-                <ArrowUpDown className="h-4 w-4" />
-                {order === 'asc' ? 'Ascending' : 'Descending'}
-              </Button>
+      <main className="mx-auto w-full max-w-5xl flex-1 px-4 pb-16 pt-6 md:px-6">
+        <a href="#results" className="skip-link">
+          Skip to results
+        </a>
 
-              <div className="flex-1 flex gap-2">
-                <Input
+        {/*
+          The app bar owns the visible title, but its slot renders a <span>,
+          so without this the document has no level-1 heading and the section
+          headings below (level 2) skip a level. Kept in the accessibility
+          tree, out of the visual layout.
+        */}
+        <h1 className="sr-only">GitHub Topics Explorer</h1>
+
+        {/* Filter toolbar. M3 guidance keeps controls out of the card
+            collection so the results stay a single, scannable group. */}
+        <section
+          aria-label="Filter and sort repositories"
+          className="mb-8 flex flex-col gap-4 rounded-2xl bg-surface-container p-4"
+        >
+          <div className="flex flex-col gap-3">
+            <M3eHeading variant="title" size="small" level={2}>
+              Filter by topics
+            </M3eHeading>
+
+            {/*
+              One oval, two elements: the field runs the left stretch and
+              ends suddenly with a flat right edge; a second element caps
+              that cut and carries the plus. The joinery mirrors a connected
+              button group's: flush inner edges (both radius 0 where they
+              meet), rounded outer caps, no gap — the visible split between
+              the two fills IS the division. A trailing icon inside the oval
+              was tried first; it reads as one control with an accessory,
+              not as the two-part oval asked for. Tab order stays input → add.
+
+              Labelled departures from stock M3 fields (4px-top container,
+              always-on indicator): the half-oval container, and no
+              indicator in any state — a rule under an oval reads as a stray
+              line (the "weird lines when selected" report). Highlighting is
+              shading-only, per the correction: rest and hover/focus fills
+              step between adjacent surface-container tones, and the label
+              still goes primary on focus. No rings anywhere here.
+              (See `.topic-composite` in globals.css.)
+            */}
+            <div className="topic-composite">
+              <M3eFormField variant="filled" className="topic-field">
+                <label slot="label" htmlFor="topic-filter">
+                  Add custom topic
+                </label>
+                <Icon name="filter_alt" slot="prefix" />
+                <input
+                  id="topic-filter"
                   type="text"
-                  placeholder="Search in results..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="flex-1"
+                  autoComplete="off"
+                  spellCheck={false}
+                  value={customTopic}
+                  onChange={(event) => setCustomTopic(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                      event.preventDefault()
+                      handleAddCustomTopic()
+                    }
+                  }}
                 />
-              </div>
+                {topicHint && <span slot="hint">{topicHint}</span>}
+              </M3eFormField>
+              <M3eButton
+                variant="filled"
+                className="topic-add-cap"
+                aria-label="Add custom topic"
+                title="Add custom topic"
+                onClick={handleAddCustomTopic}
+              >
+                <Icon name="add" />
+              </M3eButton>
             </div>
 
-            <div className="space-y-2">
-              <h2 className="text-lg font-semibold">Select Topics:</h2>
-              <div className="flex flex-wrap gap-2">
-                {availableTopics.map((topic) => (
-                  <label key={topic} className="flex items-center space-x-2">
-                    <Checkbox
-                      id={topic}
-                      checked={selectedTopics.includes(topic)}
-                      onCheckedChange={() => handleTopicChange(topic)}
-                    />
-                    <span>{topic}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <Input
-                type="text"
-                placeholder="Add custom topic"
-                value={customTopic}
-                onChange={(e) => setCustomTopic(e.target.value)}
-                onKeyPress={handleKeyPress}
-                className="max-w-xs"
-              />
-              <Button onClick={handleAddCustomTopic} size="sm">
-                <Plus className="h-4 w-4 mr-2" />
-                Add Topic
-              </Button>
-            </div>
-
-            <div className="flex flex-wrap gap-2">
-              {selectedTopics.map((topic) => (
-                <Button
+            <M3eFilterChipSet multi aria-label="Saved topics">
+              {visibleTopics.map((topic) => (
+                <M3eFilterChip
                   key={topic}
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => handleTopicChange(topic)}
-                  className="gap-1"
+                  value={topic}
+                  selected={selectedTopics.includes(topic)}
+                  // Same reason as the sort segments: React owns `selected`,
+                  // so the chip must not toggle itself first.
+                  onBeforeInput={(event) => event.preventDefault()}
+                  onClick={() => toggleTopic(topic)}
                 >
                   {topic}
-                  <X className="h-4 w-4" />
-                </Button>
+                </M3eFilterChip>
               ))}
-            </div>
-          </div>
+            </M3eFilterChipSet>
 
-          <div className="grid gap-4">
-            {loading ? (
-              Array.from({ length: 3 }).map((_, i) => (
-                <Card key={i} className="bg-white dark:bg-[#161b22] border-[#d0d7de] dark:border-[#30363d]">
-                  <CardHeader>
-                    <Skeleton className="h-4 w-48" />
-                    <Skeleton className="h-4 w-full" />
-                  </CardHeader>
-                  <CardContent>
-                    <Skeleton className="h-4 w-32" />
-                  </CardContent>
-                </Card>
-              ))
-            ) : (
-              selectedTopics.length === 0 ? (
-                <Card className="bg-white dark:bg-[#161b22] border-[#d0d7de] dark:border-[#30363d]">
-                  <CardContent className="text-center py-6">
-                    <p className="text-muted-foreground">No topics selected. Please select at least one topic to see repositories.</p>
-                  </CardContent>
-                </Card>
-              ) : filteredAndSortedRepositories.length === 0 ? (
-                <Card className="bg-white dark:bg-[#161b22] border-[#d0d7de] dark:border-[#30363d]">
-                  <CardContent className="text-center py-6">
-                    <p className="text-muted-foreground">No repositories found matching the selected criteria.</p>
-                  </CardContent>
-                </Card>
-              ) : (
-                filteredAndSortedRepositories.map((repo) => (
-                  <Card key={repo.id} className="bg-white dark:bg-[#161b22] border-[#d0d7de] dark:border-[#30363d]">
-                    <CardHeader>
-                      <div className="flex items-start justify-between">
-                        <div>
-                          <CardTitle className="flex items-center gap-2 text-[#0969da] dark:text-[#58a6ff] hover:underline">
-                            <a href={`https://github.com/${repo.full_name}`} target="_blank" rel="noopener noreferrer">
-                              {repo.full_name}
-                            </a>
-                          </CardTitle>
-                          <p className="mt-2 text-muted-foreground">{repo.description}</p>
-                        </div>
-                      </div>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="flex flex-wrap items-center gap-4 mb-4">
-                        {repo.topics.map((topic) => (
-                          <button
-                            key={topic}
-                            onClick={() => handleAddTopicFromResult(topic)}
-                            className="rounded-full bg-[#ddf4ff] dark:bg-[#388bfd26] px-3 py-1 text-xs font-medium text-[#0969da] dark:text-[#58a6ff] hover:bg-[#0969da1a] dark:hover:bg-[#388bfd4d] transition-colors"
-                          >
-                            {topic}
-                          </button>
-                        ))}
-                      </div>
-                      <div className="flex items-center text-xs text-[#57606a] dark:text-[#8b949e] gap-4">
-                        {repo.language && (
-                          <span className="flex items-center gap-1">
-                            <span 
-                              className="relative flex h-3 w-3 rounded-full"
-                              style={{ backgroundColor: languageColors[repo.language] || '#ccc' }}
-                            ></span>
-                            {repo.language}
-                          </span>
-                        )}
-                        <span className="flex items-center gap-1">
-                          <Star className="h-4 w-4" />
-                          {repo.stargazers_count.toLocaleString()}
-                        </span>
-                        <span className="flex items-center gap-1">
-                          <GitFork className="h-4 w-4" />
-                          {repo.forks_count.toLocaleString()}
-                        </span>
-                        <span className="flex items-center gap-1">
-                          <CircleDot className="h-4 w-4" />
-                          {repo.open_issues_count.toLocaleString()}
-                        </span>
-                        <span>Updated on {formatDate(repo.updated_at)}</span>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))
-              )
+            {topicFilter !== '' && visibleTopics.length === 0 && (
+              <p className="text-sm text-muted-foreground">
+                No saved topics match “{customTopic.trim()}” — press Enter to add it.
+              </p>
             )}
           </div>
+
+          {/* Sort line: single-select connected group, order toggle, and the
+              disclosure for everything else. Language and dates live behind
+              "More filters" so the common path — topics, sort, search —
+              stays one calm row. */}
+          <div className="flex flex-wrap items-center gap-3">
+            {/* Connected button group, not segmented buttons: M3 deprecated
+                segmented buttons in favour of this for single-select. */}
+            <M3eButtonGroup variant="connected" role="group" aria-label="Sort by">
+              {sortOptions.map((option) => (
+                <M3eButton
+                  key={option.value}
+                  variant="tonal"
+                  shape="square"
+                  toggle
+                  value={option.value}
+                  selected={sort === option.value}
+                  // Cancelling `beforeinput` stops the component toggling
+                  // itself, leaving React as the only writer of `selected`.
+                  // Otherwise clicking the already-active segment would
+                  // briefly deselect it before React corrected the value.
+                  onBeforeInput={(event) => event.preventDefault()}
+                  onClick={() => setSort(option.value)}
+                >
+                  {option.label}
+                </M3eButton>
+              ))}
+            </M3eButtonGroup>
+
+            <M3eButton
+              variant="tonal"
+              onClick={() => setOrder((prev) => (prev === 'asc' ? 'desc' : 'asc'))}
+              aria-label={`Sort ${
+                order === 'asc' ? 'ascending' : 'descending'
+              }. Activate to sort ${order === 'asc' ? 'descending' : 'ascending'}.`}
+            >
+              <Icon name={order === 'asc' ? 'arrow_upward' : 'arrow_downward'} />
+              {order === 'asc' ? 'Ascending' : 'Descending'}
+            </M3eButton>
+
+            <M3eButton
+              variant="tonal"
+              ref={moreFiltersRef}
+              aria-controls="more-filters"
+              onClick={() => setShowMoreFilters((prev) => !prev)}
+            >
+              <Icon name="tune" />
+              More filters{activeExtraFilterCount > 0 ? ` (${activeExtraFilterCount})` : ''}
+            </M3eButton>
+          </div>
+
+          {showMoreFilters && (
+            <div id="more-filters" className="flex flex-wrap items-start gap-x-8 gap-y-4">
+              <M3eFormField variant="filled" className="toolbar-field w-56">
+                <label slot="label">Language</label>
+                <M3eSelect
+                  onChange={(event) => {
+                    const next = (event.currentTarget as HTMLSelectElement).value
+                    if (typeof next === 'string') setLanguage(next)
+                  }}
+                >
+                  <M3eOption value="all" selected={language === 'all'}>
+                    All languages
+                  </M3eOption>
+                  {sortedLanguages.map(([name, count]) => (
+                    <M3eOption
+                      key={name}
+                      value={name.toLowerCase()}
+                      selected={language === name.toLowerCase()}
+                    >
+                      {name} ({count})
+                    </M3eOption>
+                  ))}
+                </M3eSelect>
+              </M3eFormField>
+
+              {/*
+                Date range. `fieldset`/`legend` rather than ARIA: the group
+                label and the mutual exclusivity come free and no binding
+                behavior has to be trusted. Radios stack vertically with one
+                always selected, per the M3 radio guidance; dates compare as
+                ISO calendar strings so timezones never enter into it.
+              */}
+              <fieldset className="m-0 flex min-w-[16rem] flex-1 flex-col gap-3 border-0 p-0">
+                <legend className="px-0 text-sm font-medium">Date</legend>
+                <M3eRadioGroup aria-label="Compare by last updated or created date">
+                  <label className="flex items-center gap-2 text-sm">
+                    <M3eRadio
+                      value="updated"
+                      checked={dateField === 'updated'}
+                      onBeforeInput={(event) => event.preventDefault()}
+                      onClick={() => setDateField('updated')}
+                    />
+                    Last updated
+                  </label>
+                  <label className="flex items-center gap-2 text-sm">
+                    <M3eRadio
+                      value="created"
+                      checked={dateField === 'created'}
+                      onBeforeInput={(event) => event.preventDefault()}
+                      onClick={() => setDateField('created')}
+                    />
+                    Created
+                  </label>
+                </M3eRadioGroup>
+                <div className="flex flex-wrap gap-3">
+                  <M3eFormField variant="filled" className="toolbar-field min-w-36 flex-1">
+                    <label slot="label" htmlFor="date-from">
+                      From
+                    </label>
+                    <input
+                      id="date-from"
+                      type="date"
+                      value={dateFrom}
+                      max={dateTo === '' ? undefined : dateTo}
+                      onChange={(event) => setDateFrom(event.target.value)}
+                    />
+                  </M3eFormField>
+                  <M3eFormField variant="filled" className="toolbar-field min-w-36 flex-1">
+                    <label slot="label" htmlFor="date-to">
+                      To
+                    </label>
+                    <input
+                      id="date-to"
+                      type="date"
+                      value={dateTo}
+                      min={dateFrom === '' ? undefined : dateFrom}
+                      onChange={(event) => setDateTo(event.target.value)}
+                    />
+                  </M3eFormField>
+                </div>
+                {(dateFrom !== '' || dateTo !== '') && (
+                  <M3eButton
+                    variant="text"
+                    className="self-start"
+                    onClick={() => {
+                      setDateFrom('')
+                      setDateTo('')
+                    }}
+                  >
+                    Clear dates
+                  </M3eButton>
+                )}
+              </fieldset>
+            </div>
+          )}
+        </section>
+
+        {/* Search sits on its own line directly above the results: big on
+            the left, the live result count on the right. */}
+        <div className="mb-4 flex flex-wrap items-center gap-x-6 gap-y-3">
+          <div className="min-w-[16rem] flex-1 basis-96">
+            <M3eSearchBar clearable clearLabel="Clear search">
+              <Icon name="search" slot="leading" />
+              {/*
+                `role` and `inputMode` are declared here rather than left to
+                `m3e-search-bar`, which writes both onto the element when it
+                upgrades. Declaring them means the server sends the same
+                markup the client upgrades to.
+
+                `suppressHydrationWarning` covers what is left: the search bar
+                keeps mutating this node as the user types and when its
+                clear button appears. React documents this flag for exactly
+                this case, third-party code owning attributes on a
+                React-rendered element. It does not apply to the `@m3e/react`
+                bindings themselves, which set it on their own elements.
+              */}
+              <input
+                slot="input"
+                type="search"
+                placeholder="Search in results"
+                aria-label="Search in results"
+                role="searchbox"
+                inputMode="search"
+                autoComplete="off"
+                spellCheck={false}
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                suppressHydrationWarning
+              />
+            </M3eSearchBar>
+          </div>
+          <p className="text-sm text-muted-foreground" role="status" aria-live="polite">
+            {loading
+              ? 'Searching GitHub…'
+              : `Exploring ${filteredAndSortedRepositories.length.toLocaleString()} public repositories`}
+          </p>
         </div>
-      </div>
+
+        <div id="results" className="grid scroll-mt-20 gap-2">
+          {loading ? (
+            <div
+              className="flex flex-col items-center gap-6 py-20"
+              role="status"
+              aria-label="Loading repositories"
+            >
+              <M3eLoadingIndicator />
+              <p className="text-sm text-muted-foreground">Loading repositories…</p>
+            </div>
+          ) : hasNoTopics ? (
+            <M3eCard variant="filled">
+              <div slot="content" className="flex flex-col items-center gap-3 py-4 text-center">
+                <Icon name="inbox" className="text-4xl" />
+                <p className="text-on-surface-variant">
+                  No topics selected. Pick at least one topic to see repositories.
+                </p>
+              </div>
+            </M3eCard>
+          ) : filteredAndSortedRepositories.length === 0 ? (
+            <M3eCard variant="filled">
+              <div slot="content" className="flex flex-col items-center gap-3 py-4 text-center">
+                <Icon name="search" className="text-4xl" />
+                <p className="text-on-surface-variant">
+                  No repositories match the current filters.
+                </p>
+              </div>
+            </M3eCard>
+          ) : (
+            filteredAndSortedRepositories.map((repo) => (
+              <M3eCard
+                key={repo.id}
+                variant="filled"
+                className="[content-visibility:auto] [contain-intrinsic-size:auto_200px]"
+              >
+                <div slot="header" className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                  {/*
+                    Headline-small (24px) restores the pre-M3 CardTitle size
+                    (`text-2xl`). Title-small (14px) collapsed the name and
+                    the description to the same size and buried the hierarchy.
+                  */}
+                  <M3eHeading variant="headline" size="small" emphasized level={3}>
+                    <a
+                      href={`https://github.com/${repo.full_name}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      translate="no"
+                      className="repo-link"
+                    >
+                      {repo.full_name}
+                    </a>
+                  </M3eHeading>
+                  {repo.language && (
+                    <span className="flex items-center gap-1.5 text-xs text-on-surface-variant">
+                      <span
+                        aria-hidden="true"
+                        className="inline-block h-3 w-3 shrink-0 rounded-full"
+                        style={{ backgroundColor: languageColors[repo.language] ?? '#8c959f' }}
+                      />
+                      {repo.language}
+                    </span>
+                  )}
+                </div>
+
+                <div slot="content" className="flex flex-col gap-3">
+                  {repo.description && (
+                    // Body-large (16px) rather than GitHub's 14px: the name
+                    // went back to 24px, and 14px supporting text under it
+                    // read as a caption. Deliberate, labelled exception.
+                    <p className="m-0 text-base text-on-surface-variant">{repo.description}</p>
+                  )}
+
+                  {repo.topics.length > 0 && (
+                    <M3eChipSet>
+                      {repo.topics.map((topic) => (
+                        <M3eSuggestionChip
+                          key={topic}
+                          onClick={() => handleAddTopicFromResult(topic)}
+                          title={`Filter by ${topic}`}
+                        >
+                          {topic}
+                        </M3eSuggestionChip>
+                      ))}
+                    </M3eChipSet>
+                  )}
+
+                  {/*
+                    A horizontal metadata row, not a list: `m3e-list` (even
+                    segmented) is vertical by spec — one item per line — which
+                    is where the four-lines-per-card bloat came from. Card
+                    metadata in M3 is supporting text; GitHub renders the same
+                    four facts inline, so this is an icon + label row in
+                    `on-surface-variant` with tabular numerals, centered with
+                    room to breathe rather than left-packed. Deliberate.
+                  */}
+                  <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 px-2 py-1 text-sm text-on-surface-variant">
+                    <span className="inline-flex items-center gap-1.5">
+                      <Icon name="star" filled aria-hidden="true" />
+                      <span className="tabular-nums">{repo.stargazers_count.toLocaleString()} stars</span>
+                    </span>
+                    <span className="inline-flex items-center gap-1.5">
+                      <Icon name="call_split" aria-hidden="true" />
+                      <span className="tabular-nums">{repo.forks_count.toLocaleString()} forks</span>
+                    </span>
+                    <span className="inline-flex items-center gap-1.5">
+                      <Icon name="bug_report" aria-hidden="true" />
+                      <span className="tabular-nums">{repo.open_issues_count.toLocaleString()} issues</span>
+                    </span>
+                    <span className="inline-flex items-center gap-1.5">
+                      <Icon name="schedule" aria-hidden="true" />
+                      <span>{formatDate(repo.updated_at)}</span>
+                    </span>
+                  </div>
+                </div>
+              </M3eCard>
+            ))
+          )}
+        </div>
+      </main>
     </div>
   )
 }
